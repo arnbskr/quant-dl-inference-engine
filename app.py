@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import subprocess
 import numpy as np
+import time
 from datetime import datetime
 import os
 
@@ -33,7 +34,6 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
             T_real = max(days_to_exp / 365.0, 0.01)
             r_fixed = 0.04 
             
-            # Préparation du batch
             batch_data = []
             valid_calls = []
             
@@ -41,21 +41,25 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                 market_price = (row['bid'] + row['ask']) / 2.0
                 if market_price <= 0.01: continue
                 
-                # Calcul des 3 features d'ingénierie
-                moneyness = current_price / row['strike']
-                log_moneyness = np.log(moneyness)
+                log_moneyness = np.log(current_price / row['strike'])
                 sqrt_T = np.sqrt(T_real)
                 
-                # Ajout des 7 variables dans l'ordre exact attendu par le modèle
-                batch_data.append([current_price, row['strike'], T_real, r_fixed, moneyness, log_moneyness, sqrt_T])
+                batch_data.append([current_price, row['strike'], T_real, r_fixed, log_moneyness, sqrt_T])
                 valid_calls.append((row['strike'], market_price))
             
             if batch_data:
                 np.savetxt("batch_inputs.csv", batch_data, delimiter=",")
                 
                 try:
+                    # Chronomètre End-to-End (Python inclut I/O et OS overhead)
+                    start_e2e = time.perf_counter()
+                    
                     process = subprocess.run(["./inference_engine"], capture_output=True, text=True, check=True)
                     output = process.stdout.strip()
+                    
+                    end_e2e = time.perf_counter()
+                    e2e_latency_us = (end_e2e - start_e2e) * 1_000_000
+                    
                     latency_batch_us = int(output.split(":")[1])
                     
                     ai_prices = np.loadtxt("batch_outputs.csv")
@@ -75,13 +79,15 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                         })
                     
                     df = pd.DataFrame(results)
+                    nb_options = len(df)
                     
                     st.markdown("---")
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Prix Actuel Action", f"{current_price:.2f} $")
-                    col2.metric("Options Évaluées", len(df))
-                    col3.metric("Anomalies Détectées", len(df[df['Écart (Spread)'] > threshold]))
-                    col4.metric("Latence Inférence Moy.", f"{latency_batch_us / len(df):.2f} µs/option")
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1.metric("Prix Actuel", f"{current_price:.2f} $")
+                    col2.metric("Options Évaluées", nb_options)
+                    col3.metric("Anomalies", len(df[df['Écart (Spread)'] > threshold]))
+                    col4.metric("Latence C++ Pure", f"{latency_batch_us / nb_options:.2f} µs/opt")
+                    col5.metric("Latence End-to-End", f"{e2e_latency_us / nb_options:.0f} µs/opt")
                     st.markdown("---")
                     
                     st.subheader(f"📡 Flux de cotation (Échéance : {exp_date})")
@@ -91,7 +97,6 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                             return ['background-color: rgba(46, 204, 113, 0.3)'] * len(row)
                         return [''] * len(row)
                     
-                    # Mise à jour de l'affichage Streamlit avec les résultats et mise en évidence des anomalies
                     styled_df = df.style.apply(highlight_anomalies, axis=1).format({
                         "Strike ($)": "{:.2f}",
                         "Prix Marché ($)": "{:.2f}",

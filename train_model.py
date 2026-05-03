@@ -19,8 +19,7 @@ T = np.random.uniform(0.01, 3.0, num_samples)
 r = np.random.uniform(0.00, 0.05, num_samples)
 
 # Feature Engineering : Ajout de la Moneyness, Log-Moneyness et Racine du temps
-moneyness = S / K
-log_moneyness = np.log(moneyness)
+log_moneyness = np.log(S / K)
 sqrt_T = np.sqrt(T)
 
 # On utilise log_moneyness pour générer le smile, c'est plus stable mathématiquement
@@ -34,7 +33,7 @@ def black_scholes_call(S, K, T, r, sigma):
     return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
 
 y_target = black_scholes_call(S, K, T, r, sigma_smile)
-X_features = np.column_stack((S, K, T, r, moneyness, log_moneyness, sqrt_T))
+X_features = np.column_stack((S, K, T, r, log_moneyness, sqrt_T))
 
 # 2. Préparation des données pour PyTorch (train/test split + scaling)
 X_train, X_test, y_train, y_test = train_test_split(X_features, y_target, test_size=0.2, random_state=42)
@@ -46,11 +45,11 @@ X_test_scaled = scaler_X.transform(X_test)
 train_dataset = TensorDataset(torch.tensor(X_train_scaled, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32).view(-1, 1))
 train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
 
-# 3. Architecture du MLP pour la prédiction du prix d'option (7 entrées : S, K, T, r, moneyness, log_moneyness, sqrt_T) + smile de volatilité implicite
+# 3. Architecture du MLP pour la prédiction du prix d'option (6 entrées : S, K, T, r, log_moneyness, sqrt_T) + smile de volatilité implicite
 class PricingMLP(nn.Module):
     def __init__(self):
         super(PricingMLP, self).__init__()
-        self.fc1 = nn.Linear(in_features=7, out_features=64) # 7 entrées
+        self.fc1 = nn.Linear(in_features=6, out_features=64) # 6 entrées
         self.relu1 = nn.ReLU()
         self.fc2 = nn.Linear(in_features=64, out_features=64)
         self.relu2 = nn.ReLU()
