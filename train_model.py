@@ -30,7 +30,7 @@ def black_scholes_call(S, K, T, r, sigma):
     return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
 
 y_target = black_scholes_call(S, K, T, r, sigma_smile)
-X_features = np.column_stack((S, K, T, r))
+X_features = np.column_stack((S, K, T, r, moneyness))
 
 # 2. Préparation des données pour PyTorch (train/test split + scaling)
 X_train, X_test, y_train, y_test = train_test_split(X_features, y_target, test_size=0.2, random_state=42)
@@ -42,11 +42,11 @@ X_test_scaled = scaler_X.transform(X_test)
 train_dataset = TensorDataset(torch.tensor(X_train_scaled, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32).view(-1, 1))
 train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
 
-# 3. Architecture du MLP pour la prédiction du prix d'option (4 entrées : S, K, T, r) + smile de volatilité implicite
+# 3. Architecture du MLP pour la prédiction du prix d'option (5 entrées : S, K, T, r, moneyness) + smile de volatilité implicite
 class PricingMLP(nn.Module):
     def __init__(self):
         super(PricingMLP, self).__init__()
-        self.fc1 = nn.Linear(in_features=4, out_features=64)
+        self.fc1 = nn.Linear(in_features=5, out_features=64) # 5 entrées
         self.relu1 = nn.ReLU()
         self.fc2 = nn.Linear(in_features=64, out_features=64)
         self.relu2 = nn.ReLU()

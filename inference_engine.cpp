@@ -69,25 +69,12 @@ vector<float> linear_layer(const vector<vector<float>> &W, const vector<float> &
 // 3. Moteur d'inférence principal optimisé pour la performance
 
 int main(int argc, char* argv[]) {
-    // Le binaire prend désormais les paramètres directement en argument
-    if (argc != 5) {
-        cerr << "Usage: ./inference_engine <S> <K> <T> <r>" << endl;
-        cerr << "Exemple: ./inference_engine 150.0 155.0 0.5 0.02" << endl;
-        return 1;
-    }
-
-    // Récupération des inputs bruts du marché
-    vector<float> raw_input = {
-        stof(argv[1]), stof(argv[2]), stof(argv[3]), stof(argv[4])
-    };
-
     string path = "model_weights/";
 
-    // 1. Chargement du scaler
+    // 1. Chargement des poids et scalers
     vector<float> scaler_mean = load_1d_csv(path + "scaler_mean.csv");
     vector<float> scaler_scale = load_1d_csv(path + "scaler_scale.csv");
 
-    // 2. Chargement des poids
     vector<vector<float>> W1 = load_2d_csv(path + "fc1.weight.csv");
     vector<float> b1 = load_1d_csv(path + "fc1.bias.csv");
     vector<vector<float>> W2 = load_2d_csv(path + "fc2.weight.csv");
@@ -97,31 +84,44 @@ int main(int argc, char* argv[]) {
     vector<vector<float>> W_out = load_2d_csv(path + "output_layer.weight.csv");
     vector<float> b_out = load_1d_csv(path + "output_layer.bias.csv");
 
+    // 2. Chargement du batch d'options à évaluer
+
+    vector<vector<float>> batch_inputs = load_2d_csv("batch_inputs.csv");
+    vector<float> batch_outputs;
+    batch_outputs.reserve(batch_inputs.size());
+
     // Début de l'inférence, chronométré pour mesurer la latence
     auto start_time = chrono::high_resolution_clock::now();
 
-    // 3. Standardisation des inputs (scaling)
-    vector<float> scaled_input(4);
-    for (size_t i = 0; i < 4; ++i) {
-        scaled_input[i] = (raw_input[i] - scaler_mean[i]) / scaler_scale[i];
-    }
+    for (auto &raw_input : batch_inputs) {
+        // Standardisation
+        vector<float> scaled_input(5);
+        for (size_t i = 0; i < 5; ++i) {
+            scaled_input[i] = (raw_input[i] - scaler_mean[i]) / scaler_scale[i];
+        }
 
-    // 4. Inférence dans le MLP
-    vector<float> z1 = linear_layer(W1, scaled_input, b1);
-    apply_relu(z1);
-    vector<float> z2 = linear_layer(W2, z1, b2);
-    apply_relu(z2);
-    vector<float> z3 = linear_layer(W3, z2, b3);
-    apply_relu(z3);
-    vector<float> output = linear_layer(W_out, z3, b_out);
+        // Inférence
+        vector<float> z1 = linear_layer(W1, scaled_input, b1); apply_relu(z1);
+        vector<float> z2 = linear_layer(W2, z1, b2); apply_relu(z2);
+        vector<float> z3 = linear_layer(W3, z2, b3); apply_relu(z3);
+        vector<float> output = linear_layer(W_out, z3, b_out);
+        
+        batch_outputs.push_back(output[0]);
+    }
 
     auto end_time = chrono::high_resolution_clock::now();
     // Fin de l'inférence, calcul de la durée
 
     auto duration = chrono::duration_cast<chrono::microseconds>(end_time - start_time);
 
-    // Formatage spécial pour que le script Python/Streamlit puisse lire la sortie facilement
-    cout << "PRICE:" << output[0] << ",LATENCY:" << duration.count() << endl;
+    // 3. Sauvegarde des résultats
+    ofstream outfile("batch_outputs.csv");
+    for (float price : batch_outputs) {
+        outfile << price << "\n";
+    }
+    outfile.close();
+
+    cout << "LATENCY_BATCH:" << duration.count() << endl;
 
     return 0;
 }
