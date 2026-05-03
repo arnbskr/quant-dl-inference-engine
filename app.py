@@ -33,7 +33,7 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
             T_real = max(days_to_exp / 365.0, 0.01)
             r_fixed = 0.04 
             
-            # Préparation des données pour le batch d'inférence
+            # Préparation du batch
             batch_data = []
             valid_calls = []
             
@@ -41,23 +41,24 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                 market_price = (row['bid'] + row['ask']) / 2.0
                 if market_price <= 0.01: continue
                 
+                # Calcul des 3 features d'ingénierie
                 moneyness = current_price / row['strike']
-                batch_data.append([current_price, row['strike'], T_real, r_fixed, moneyness])
+                log_moneyness = np.log(moneyness)
+                sqrt_T = np.sqrt(T_real)
+                
+                # Ajout des 7 variables dans l'ordre exact attendu par le modèle
+                batch_data.append([current_price, row['strike'], T_real, r_fixed, moneyness, log_moneyness, sqrt_T])
                 valid_calls.append((row['strike'], market_price))
             
             if batch_data:
-                # 1. Écriture du fichier d'entrée
                 np.savetxt("batch_inputs.csv", batch_data, delimiter=",")
                 
-                # 2. Appel unique au moteur C++
                 try:
                     process = subprocess.run(["./inference_engine"], capture_output=True, text=True, check=True)
                     output = process.stdout.strip()
                     latency_batch_us = int(output.split(":")[1])
                     
-                    # 3. Lecture des résultats
                     ai_prices = np.loadtxt("batch_outputs.csv")
-                    # Gérer le cas où il n'y a qu'une seule prédiction (np.loadtxt renvoie un float au lieu d'un array)
                     if ai_prices.ndim == 0:
                         ai_prices = [float(ai_prices)]
                     
@@ -80,7 +81,6 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                     col1.metric("Prix Actuel Action", f"{current_price:.2f} $")
                     col2.metric("Options Évaluées", len(df))
                     col3.metric("Anomalies Détectées", len(df[df['Écart (Spread)'] > threshold]))
-                    # Affichage de la latence globale divisée par le nombre d'options pour avoir la latence unitaire nette
                     col4.metric("Latence Inférence Moy.", f"{latency_batch_us / len(df):.2f} µs/option")
                     st.markdown("---")
                     
@@ -91,6 +91,7 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                             return ['background-color: rgba(46, 204, 113, 0.3)'] * len(row)
                         return [''] * len(row)
                     
+                    # Mise à jour de l'affichage Streamlit avec les résultats et mise en évidence des anomalies
                     styled_df = df.style.apply(highlight_anomalies, axis=1).format({
                         "Strike ($)": "{:.2f}",
                         "Prix Marché ($)": "{:.2f}",
@@ -103,6 +104,5 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                 except Exception as e:
                     st.error(f"Erreur d'exécution C++ : {e}")
 
-            # Nettoyage des fichiers temporaires
             if os.path.exists("batch_inputs.csv"): os.remove("batch_inputs.csv")
             if os.path.exists("batch_outputs.csv"): os.remove("batch_outputs.csv")

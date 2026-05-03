@@ -95,8 +95,8 @@ int main(int argc, char* argv[]) {
 
     for (auto &raw_input : batch_inputs) {
         // Standardisation
-        vector<float> scaled_input(5);
-        for (size_t i = 0; i < 5; ++i) {
+        vector<float> scaled_input(7);
+        for (size_t i = 0; i < 7; ++i) {
             scaled_input[i] = (raw_input[i] - scaler_mean[i]) / scaler_scale[i];
         }
 
