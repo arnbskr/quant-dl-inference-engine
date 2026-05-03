@@ -1,0 +1,24 @@
+# Python / Environnements
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# C++ / Binaires
+*.o
+*.out
+*.exe
+inference_engine
+moteur_inference
+
+# Données et Poids
+model_weights/
+*.csv
+
+# OS et IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
