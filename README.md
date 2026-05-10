@@ -36,16 +36,16 @@ quant-dl-inference-engine/
 └── requirements.txt           # Python dependencies
 ```
 
-## Current Status & Low-Latency Roadmap
+## Performance & Low-Latency Engineering
 
-**Current Performance:** The engine currently achieves a microsecond-level pure inference latency (~3.00 µs per option) using standard STL containers.
+**Current Performance:** The engine achieves an ultra-low pure inference latency of **~450 nanoseconds** per option on a standard CPU.
 
-While this is extremely fast for standard applications, true HFT requires nanosecond-scale latency. **The codebase is actively being refactored to implement the following quantitative engineering standards:**
-
-* [ ] **Memory Management:** Transitioning from heap allocation (`std::vector`) to strict stack allocation (`std::array` or raw arrays) to eliminate dynamic memory overhead.
-* [ ] **Cache Line Optimization:** Flattening 2D weight matrices into contiguous 1D arrays to maximize L1/L2 CPU cache hits and prevent pointer chasing.
-* [ ] **Vectorization (SIMD):** Replacing naive matrix multiplication loops with SIMD intrinsic instructions (AVX2/AVX-512) for single-clock-cycle parallel computing.
-* [ ] **Binary Serialization:** Replacing `.csv` parsing with a binary weight format to drastically reduce engine initialization time.
+This high-frequency trading (HFT) standard was achieved by implementing strict quantitative engineering practices:
+- [x] **Memory Management:** Zero dynamic allocation (no `malloc`/`new`) during the critical execution path via pre-allocated buffers and `Eigen::Map`.
+- [x] **Cache Line Optimization:** Complete elimination of `std::vector<vector<float>>` pointer chasing by flattening 2D weight matrices into contiguous 1D arrays, maximizing L1/L2 CPU cache hits.
+- [x] **Vectorization (SIMD):** Integration of the `Eigen` library and `-march=native` compiler flags to execute SIMD intrinsic instructions (AVX/AVX2) for single-clock-cycle parallel computing.
+- [x] **Micro-Benchmarking:** Implementation of CPU warm-up cycles to mitigate OS jitter and cold-cache penalties during performance measurement.
+- [ ] *Next step: Replace CSV parsing with a binary serialization format to reduce engine initialization time.*
 
 ## Prerequisites
 

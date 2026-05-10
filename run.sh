@@ -17,7 +17,7 @@ else
 fi
 
 echo -e "\e[1;36m[2/3] Compiling C++ Engine (O3 Optimization)...\e[0m"
-g++ -O3 engine/inference_engine.cpp -o engine/inference_engine
+g++ -O3 -march=native -I/usr/include/eigen3 engine/inference_engine.cpp -o engine/inference_engine
 if [ $? -ne 0 ]; then
     echo -e "\e[31mC++ Compilation Error.\e[0m"
     exit 1
