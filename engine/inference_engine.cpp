@@ -8,120 +8,131 @@
 
 using namespace std;
 
-// 1. Fonctions de chargement des données (CSV) optimisées pour la performance
+// 1. DATA LOADING
 
-vector<float> load_1d_csv(const string &filename) {
+vector<float> load_bias_csv(const string &filename) {
     vector<float> result;
     ifstream file(filename);
     string line;
+
     if (!file.is_open()) {
-        cerr << "Erreur : Impossible d'ouvrir " << filename << endl;
-        exit(1);
+        cerr << "Error: Unable to open file " << filename << endl;
+        return result;
     }
+
     while (getline(file, line)) {
         result.push_back(stof(line));
     }
     return result;
 }
 
-vector<vector<float>> load_2d_csv(const string &filename) {
-    vector<vector<float>> result;
+// Load W matrix as a single contiguous 1D vector (Cache Optimization)
+vector<float> load_weight_csv_flat(const string &filename) {
+    vector<float> result;
     ifstream file(filename);
     string line;
+
     if (!file.is_open()) {
-        cerr << "Erreur : Impossible d'ouvrir " << filename << endl;
-        exit(1);
+        cerr << "Error: Unable to open file " << filename << endl;
+        return result;
     }
+
     while (getline(file, line)) {
-        vector<float> row;
         stringstream ss(line);
         string val;
+
         while (getline(ss, val, ',')) {
-            row.push_back(stof(val));
+            result.push_back(stof(val));
         }
-        result.push_back(row);
     }
     return result;
 }
 
-// 2. Opérations de base du réseau de neurones optimisées pour la performance
+// 2. NETWORK MATHEMATICS (LOW LATENCY OPERATIONS)
 
-// Passage par référence (&) pour modifier sur place sans copier la mémoire
 void apply_relu(vector<float> &vec) {
     for (float &val : vec) {
         val = std::max(0.0f, val);
     }
 }
 
-// Passage par référence constante (const &) pour éviter les copies inutiles
-vector<float> linear_layer(const vector<vector<float>> &W, const vector<float> &X, const vector<float> &b) {
-    vector<float> Z(W.size(), 0.0f);
-    for (size_t i = 0; i < W.size(); ++i) {
+// Optimized Forward Pass:
+// - W is a 1D vector (CPU Cache optimization)
+// - Z is passed by reference (Zero allocation during inference)
+void linear_layer(const vector<float> &W, const vector<float> &X, const vector<float> &b, vector<float> &Z, int rows, int cols) {
+    for (int i = 0; i < rows; ++i) {
         float sum = 0.0f;
-        for (size_t j = 0; j < X.size(); ++j) {
-            sum += W[i][j] * X[j];
+        int row_offset = i * cols; // Calculated once per row
+        
+        for (int j = 0; j < cols; ++j) {
+            // Contiguous memory access W[row_offset + j]
+            sum += W[row_offset + j] * X[j];
         }
         Z[i] = sum + b[i];
     }
-    return Z;
 }
 
-// 3. Moteur d'inférence principal optimisé pour la performance
+// 3. MAIN ENGINE
 
-int main(int argc, char* argv[]) {
+int main() {
     string path = "model_weights/";
 
-    // 1. Chargement des poids et scalers
-    vector<float> scaler_mean = load_1d_csv(path + "scaler_mean.csv");
-    vector<float> scaler_scale = load_1d_csv(path + "scaler_scale.csv");
+    // 1. Load weights in flat 1D format
+    vector<float> W1 = load_weight_csv_flat(path + "fc1.weight.csv");
+    vector<float> b1 = load_bias_csv(path + "fc1.bias.csv");
 
-    vector<vector<float>> W1 = load_2d_csv(path + "fc1.weight.csv");
-    vector<float> b1 = load_1d_csv(path + "fc1.bias.csv");
-    vector<vector<float>> W2 = load_2d_csv(path + "fc2.weight.csv");
-    vector<float> b2 = load_1d_csv(path + "fc2.bias.csv");
-    vector<vector<float>> W3 = load_2d_csv(path + "fc3.weight.csv");
-    vector<float> b3 = load_1d_csv(path + "fc3.bias.csv");
-    vector<vector<float>> W_out = load_2d_csv(path + "output_layer.weight.csv");
-    vector<float> b_out = load_1d_csv(path + "output_layer.bias.csv");
+    vector<float> W2 = load_weight_csv_flat(path + "fc2.weight.csv");
+    vector<float> b2 = load_bias_csv(path + "fc2.bias.csv");
 
-    // 2. Chargement du batch d'options à évaluer
+    vector<float> W3 = load_weight_csv_flat(path + "fc3.weight.csv");
+    vector<float> b3 = load_bias_csv(path + "fc3.bias.csv");
 
-    vector<vector<float>> batch_inputs = load_2d_csv("batch_inputs.csv");
-    vector<float> batch_outputs;
-    batch_outputs.reserve(batch_inputs.size());
+    vector<float> W_out = load_weight_csv_flat(path + "output_layer.weight.csv");
+    vector<float> b_out = load_bias_csv(path + "output_layer.bias.csv");
 
-    // Début de l'inférence, chronométré pour mesurer la latence
+    if (W1.empty() || b_out.empty()) {
+        cerr << "Fatal Error: Failed to load weights." << endl;
+        return 1;
+    }
+
+    vector<float> input_features = load_bias_csv(path + "current_input.csv");
+    if (input_features.size() != 5) {
+        cerr << "Fatal Error: Invalid or missing input file." << endl;
+        return 1;
+    }
+
+    // 2. Pre-allocate memory buffers (before the timer), ensures no heap allocation (malloc/new) happens during trading logic.
+    vector<float> z1(64, 0.0f);
+    vector<float> z2(64, 0.0f);
+    vector<float> z3(64, 0.0f);
+    vector<float> output(1, 0.0f);
+
+    // INFERENCE START & TIMER
     auto start_time = chrono::high_resolution_clock::now();
 
-    for (auto &raw_input : batch_inputs) {
-        // Standardisation
-        vector<float> scaled_input(6);
-        for (size_t i = 0; i < 6; ++i) {
-            scaled_input[i] = (raw_input[i] - scaler_mean[i]) / scaler_scale[i];
-        }
+    // Layer 1: 5 inputs -> 64 outputs
+    linear_layer(W1, input_features, b1, z1, 64, 5);
+    apply_relu(z1);
 
-        // Inférence
-        vector<float> z1 = linear_layer(W1, scaled_input, b1); apply_relu(z1);
-        vector<float> z2 = linear_layer(W2, z1, b2); apply_relu(z2);
-        vector<float> z3 = linear_layer(W3, z2, b3); apply_relu(z3);
-        vector<float> output = linear_layer(W_out, z3, b_out);
-        
-        batch_outputs.push_back(output[0]);
-    }
+    // Layer 2: 64 inputs -> 64 outputs
+    linear_layer(W2, z1, b2, z2, 64, 64);
+    apply_relu(z2);
 
+    // Layer 3: 64 inputs -> 64 outputs
+    linear_layer(W3, z2, b3, z3, 64, 64);
+    apply_relu(z3);
+
+    // Output Layer: 64 inputs -> 1 output (Linear Activation)
+    linear_layer(W_out, z3, b_out, output, 1, 64);
+
+    // INFERENCE END & TIMER
     auto end_time = chrono::high_resolution_clock::now();
-    // Fin de l'inférence, calcul de la durée
+    
+    // Measure in nanoseconds
+    auto duration = chrono::duration_cast<chrono::nanoseconds>(end_time - start_time);
 
-    auto duration = chrono::duration_cast<chrono::microseconds>(end_time - start_time);
-
-    // 3. Sauvegarde des résultats
-    ofstream outfile("batch_outputs.csv");
-    for (float price : batch_outputs) {
-        outfile << price << "\n";
-    }
-    outfile.close();
-
-    cout << "LATENCY_BATCH:" << duration.count() << endl;
+    cout << "Predicted Option Price : " << output[0] << endl;
+    cout << "Inference Latency      : " << duration.count() << " ns" << endl;
 
     return 0;
 }
