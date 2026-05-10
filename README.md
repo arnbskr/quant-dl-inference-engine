@@ -14,24 +14,26 @@ This project demonstrates the design and deployment of an end-to-end quantitativ
 Derivatives pricing often faces a dilemma: using fast but imperfect analytical formulas (e.g., Black-Scholes), or precise but computationally expensive stochastic/local volatility models. 
 
 This project tackles this bottleneck through a hybrid architecture:
-1. **Modeling (Python / PyTorch):** Training a Multi-Layer Perceptron (MLP) on synthetic data to approximate complex, non-linear pricing functions (e.g., Volatility Smiles).
+1. **Research & Modeling (Python / PyTorch):** Training a Multi-Layer Perceptron (MLP) on synthetic data to approximate complex, non-linear pricing functions (e.g., Volatility Smiles).
 2. **Inference Engine (Native C++):** Exporting model weights to a custom, lightweight C++ inference engine that executes the forward pass entirely independently of heavy ML frameworks.
 3. **Live Application (Streamlit):** A real-time dashboard fetching live market data (via Yahoo Finance), running the C++ engine for theoretical pricing, and scanning for arbitrage opportunities (model vs. market spreads) in microseconds.
 
 ## Repository Structure
 
 ```text
-├── app.py                     # Streamlit Dashboard (Live market scanner interface)
-├── inference_engine.cpp       # Native low-latency inference engine
-├── train_model.py             # Data generation, PyTorch MLP training, and weight export
-├── plot_engineering.py        # Latency visualization script
-├── plot_results.py            # AI performance visualization script
+quant-dl-inference-engine/
+├── assets/                    # Images and plots for documentation
+├── dashboard/                 # Live market scanner interface
+│   └── app.py
+├── engine/                    # Native low-latency inference engine
+│   └── inference_engine.cpp
+├── research/                  # Data generation, PyTorch training, and analytics
+│   ├── train_model.py
+│   ├── plot_engineering.py
+│   └── plot_results.py
+├── model_weights/             # Exported tensors and parameters (auto-generated)
 ├── run.sh                     # Automation script (Compilation & Execution)
-├── requirements.txt           # Python dependencies
-└── model_weights/             # Exported tensors and parameters (auto-generated)
-    ├── fc1.weight.csv
-    ├── scaler_mean.csv
-    └── ...
+└── requirements.txt           # Python dependencies
 ```
 
 ## Current Status & Low-Latency Roadmap
@@ -70,7 +72,7 @@ pip install -r requirements.txt
 Generate the synthetic options data, train the PyTorch MLP, and export the weights into the `model_weights/` directory.
 
 ```bash
-python train_model.py
+python research/train_model.py
 ```
 
 ### Step 3: Compile the C++ Inference Engine
@@ -78,7 +80,7 @@ python train_model.py
 Compile the native engine with the maximum optimization flag (`-O3`).
 
 ```bash
-g++ -O3 inference_engine.cpp -o inference_engine
+g++ -O3 engine/inference_engine.cpp -o engine/inference_engine
 ```
 
 ### Step 4: Run the Live Arbitrage Scanner
@@ -86,8 +88,10 @@ g++ -O3 inference_engine.cpp -o inference_engine
 Launch the Streamlit dashboard to see the MLOps pipeline scan live market anomalies.
 
 ```bash
-streamlit run app.py
+streamlit run dashboard/app.py
 ```
+
+*(Alternatively, you can run the entire pipeline at once using the provided bash script: `./run.sh`)*
 
 ## References
 
