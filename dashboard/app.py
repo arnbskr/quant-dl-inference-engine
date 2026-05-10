@@ -11,7 +11,7 @@ st.set_page_config(page_title="Quant Anomaly Scanner", layout="wide")
 st.title("Pricing Anomaly Scanner (Batch Mode)")
 st.markdown("*C++ Deep Learning Inference Engine (Critical Latency)*")
 
-st.sidebar.header("⚙️ Market Parameters")
+st.sidebar.header("Market Parameters")
 ticker_symbol = st.sidebar.text_input("Stock Ticker", value="AAPL").upper()
 threshold = st.sidebar.slider("Anomaly Detection Threshold ($)", min_value=0.10, max_value=2.00, value=0.50, step=0.10)
 
@@ -61,7 +61,7 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                     e2e_latency_us = (end_e2e - start_e2e) * 1_000_000
                     
                     # Ensure C++ outputs the latency properly to be parsed here
-                    latency_batch_us = int(output.split(":")[1].replace("ns", "").strip()) / 1000.0 if "ns" in output else 0
+                    latency_batch_ns = int(output.split(":")[1].replace("ns", "").strip()) if "ns" in output else 0
                     
                     ai_prices = np.loadtxt("batch_outputs.csv")
                     if ai_prices.ndim == 0:
@@ -87,11 +87,11 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                     col1.metric("Current Price", f"${current_price:.2f}")
                     col2.metric("Options Scanned", nb_options)
                     col3.metric("Anomalies", len(df[df['Spread ($)'] > threshold]))
-                    col4.metric("Pure C++ Latency", f"{latency_batch_us / nb_options:.2f} µs/opt")
+                    col4.metric("Pure C++ Latency", f"{latency_batch_ns / nb_options:.0f} ns/opt")
                     col5.metric("End-to-End Latency", f"{e2e_latency_us / nb_options:.0f} µs/opt")
                     st.markdown("---")
                     
-                    st.subheader(f"📡 Live Options Feed (Expiration: {exp_date})")
+                    st.subheader(f"Live Options Feed (Expiration: {exp_date})")
                     
                     def highlight_anomalies(row):
                         if row['Spread ($)'] > threshold:
