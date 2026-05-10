@@ -7,22 +7,22 @@ import time
 from datetime import datetime
 import os
 
-st.set_page_config(page_title="Scanner d'Anomalies Quant", layout="wide")
-st.title("⚡ Scanner d'Anomalies de Pricing (Batch Mode)")
-st.markdown("*Moteur d'inférence Deep Learning C++ (Latence critique)*")
+st.set_page_config(page_title="Quant Anomaly Scanner", layout="wide")
+st.title("Pricing Anomaly Scanner (Batch Mode)")
+st.markdown("*C++ Deep Learning Inference Engine (Critical Latency)*")
 
-st.sidebar.header("⚙️ Paramètres du Marché")
-ticker_symbol = st.sidebar.text_input("Ticker de l'action", value="AAPL").upper()
-threshold = st.sidebar.slider("Seuil de détection d'anomalie ($)", min_value=0.10, max_value=2.00, value=0.50, step=0.10)
+st.sidebar.header("⚙️ Market Parameters")
+ticker_symbol = st.sidebar.text_input("Stock Ticker", value="AAPL").upper()
+threshold = st.sidebar.slider("Anomaly Detection Threshold ($)", min_value=0.10, max_value=2.00, value=0.50, step=0.10)
 
-if st.sidebar.button("Lancer le Scanner Live", type="primary"):
-    with st.spinner(f"Connexion au marché pour {ticker_symbol}..."):
+if st.sidebar.button("Launch Live Scanner", type="primary"):
+    with st.spinner(f"Connecting to market for {ticker_symbol}..."):
         ticker = yf.Ticker(ticker_symbol)
         current_price = ticker.history(period="1d")['Close'].iloc[-1]
         expirations = ticker.options
         
         if not expirations:
-            st.error(f"Aucune option trouvée pour le ticker {ticker_symbol}.")
+            st.error(f"No options found for ticker {ticker_symbol}.")
         else:
             exp_date = expirations[0] 
             opt = ticker.option_chain(exp_date)
@@ -51,16 +51,17 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                 np.savetxt("batch_inputs.csv", batch_data, delimiter=",")
                 
                 try:
-                    # Chronomètre End-to-End (Python inclut I/O et OS overhead)
+                    # End-to-End Timer (Python includes I/O and OS overhead)
                     start_e2e = time.perf_counter()
                     
-                    process = subprocess.run(["./inference_engine"], capture_output=True, text=True, check=True)
+                    process = subprocess.run(["./engine/inference_engine"], capture_output=True, text=True, check=True)
                     output = process.stdout.strip()
                     
                     end_e2e = time.perf_counter()
                     e2e_latency_us = (end_e2e - start_e2e) * 1_000_000
                     
-                    latency_batch_us = int(output.split(":")[1])
+                    # Ensure C++ outputs the latency properly to be parsed here
+                    latency_batch_us = int(output.split(":")[1].replace("ns", "").strip()) / 1000.0 if "ns" in output else 0
                     
                     ai_prices = np.loadtxt("batch_outputs.csv")
                     if ai_prices.ndim == 0:
@@ -71,11 +72,11 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                         ai_price = ai_prices[i]
                         spread = abs(market_price - ai_price)
                         results.append({
-                            "Action": ticker_symbol,
+                            "Ticker": ticker_symbol,
                             "Strike ($)": strike,
-                            "Prix Marché ($)": market_price,
-                            "Prix Modèle IA ($)": ai_price,
-                            "Écart (Spread)": spread
+                            "Market Price ($)": market_price,
+                            "AI Model Price ($)": ai_price,
+                            "Spread ($)": spread
                         })
                     
                     df = pd.DataFrame(results)
@@ -83,31 +84,31 @@ if st.sidebar.button("Lancer le Scanner Live", type="primary"):
                     
                     st.markdown("---")
                     col1, col2, col3, col4, col5 = st.columns(5)
-                    col1.metric("Prix Actuel", f"{current_price:.2f} $")
-                    col2.metric("Options Évaluées", nb_options)
-                    col3.metric("Anomalies", len(df[df['Écart (Spread)'] > threshold]))
-                    col4.metric("Latence C++ Pure", f"{latency_batch_us / nb_options:.2f} µs/opt")
-                    col5.metric("Latence End-to-End", f"{e2e_latency_us / nb_options:.0f} µs/opt")
+                    col1.metric("Current Price", f"${current_price:.2f}")
+                    col2.metric("Options Scanned", nb_options)
+                    col3.metric("Anomalies", len(df[df['Spread ($)'] > threshold]))
+                    col4.metric("Pure C++ Latency", f"{latency_batch_us / nb_options:.2f} µs/opt")
+                    col5.metric("End-to-End Latency", f"{e2e_latency_us / nb_options:.0f} µs/opt")
                     st.markdown("---")
                     
-                    st.subheader(f"📡 Flux de cotation (Échéance : {exp_date})")
+                    st.subheader(f"📡 Live Options Feed (Expiration: {exp_date})")
                     
                     def highlight_anomalies(row):
-                        if row['Écart (Spread)'] > threshold:
+                        if row['Spread ($)'] > threshold:
                             return ['background-color: rgba(46, 204, 113, 0.3)'] * len(row)
                         return [''] * len(row)
                     
                     styled_df = df.style.apply(highlight_anomalies, axis=1).format({
                         "Strike ($)": "{:.2f}",
-                        "Prix Marché ($)": "{:.2f}",
-                        "Prix Modèle IA ($)": "{:.2f}",
-                        "Écart (Spread)": "{:.2f}"
+                        "Market Price ($)": "{:.2f}",
+                        "AI Model Price ($)": "{:.2f}",
+                        "Spread ($)": "{:.2f}"
                     })
                     
                     st.dataframe(styled_df, width="stretch", hide_index=True)
                     
                 except Exception as e:
-                    st.error(f"Erreur d'exécution C++ : {e}")
+                    st.error(f"C++ Execution Error: {e}")
 
             if os.path.exists("batch_inputs.csv"): os.remove("batch_inputs.csv")
             if os.path.exists("batch_outputs.csv"): os.remove("batch_outputs.csv")

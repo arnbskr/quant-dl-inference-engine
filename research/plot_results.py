@@ -7,8 +7,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import TensorDataset, DataLoader
 
-# 1. Génération des données synthétiques pour l'entraînement avec smile de volatilité
-print("Génération des données et entraînement express pour les graphiques...")
+# 1. Synthetic data generation and express training for plots
+print("Generating data and quick training for plots...")
 np.random.seed(42)
 num_samples = 300000
 
@@ -40,7 +40,6 @@ X_test_scaled = scaler_X.transform(X_test)
 train_dataset = TensorDataset(torch.tensor(X_train_scaled, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32).view(-1, 1))
 train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
 
-# 2. Architecture du MLP pour la prédiction du prix d'option (6 entrées : S, K, T, r, log_moneyness, sqrt_T) + smile de volatilité implicite
 class PricingMLP(nn.Module):
     def __init__(self):
         super(PricingMLP, self).__init__()
@@ -63,7 +62,7 @@ criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 epochs = 50
-loss_history = [] # Pour stocker l'erreur à chaque epoch
+loss_history = [] 
 
 model.train()
 for epoch in range(epochs):
@@ -75,51 +74,47 @@ for epoch in range(epochs):
         optimizer.step()
         epoch_loss += loss.item()
     
-    # Moyenne de la loss pour l'epoch
     avg_loss = epoch_loss / len(train_loader)
     loss_history.append(avg_loss)
 
-# 3. Génération des graphiques pour la validation et la convergence du modèle
-print("Génération des images en cours...")
+# 3. Generating plots for validation and model convergence
+print("Generating images...")
 
-# Configuration du style global
+# Global style configuration
 plt.style.use('seaborn-v0_8-whitegrid')
 plt.rcParams.update({'font.size': 12, 'font.family': 'sans-serif'})
 
-# Graphique 1 : Courbe d'apprentissage
+# Plot 1: Learning Curve
 plt.figure(figsize=(10, 6))
-plt.plot(range(1, epochs + 1), loss_history, color='#2ecc71', linewidth=2.5, label='Erreur quadratique moyenne (Train)')
-plt.title("Convergence du modèle deep learning (loss curve)", fontsize=16, fontweight='bold', pad=15)
-plt.xlabel("Époques", fontsize=14)
+plt.plot(range(1, epochs + 1), loss_history, color='#2ecc71', linewidth=2.5, label='Mean Squared Error (Train)')
+plt.title("Deep Learning Model Convergence (Loss Curve)", fontsize=16, fontweight='bold', pad=15)
+plt.xlabel("Epochs", fontsize=14)
 plt.ylabel("MSE Loss", fontsize=14)
-plt.yscale('log') # Échelle logarithmique
+plt.yscale('log') 
 plt.legend(fontsize=12)
 plt.tight_layout()
-plt.savefig("loss_curve.png", dpi=300)
+plt.savefig("assets/loss_curve.png", dpi=300)
 plt.close()
 
-# Graphique 2 : Scatter Plot (Vérité terrain vs Prédictions)
+# Plot 2: Scatter Plot (Ground Truth vs Predictions)
 model.eval()
 with torch.no_grad():
     y_pred = model(torch.tensor(X_test_scaled, dtype=torch.float32)).numpy().flatten()
 
-# Pour éviter un graphe trop lourd à charger, on prend un échantillon aléatoire de 5000 points
 indices = np.random.choice(len(y_test), 5000, replace=False)
 y_test_sample = y_test[indices]
 y_pred_sample = y_pred[indices]
 
 plt.figure(figsize=(8, 8))
-# Ligne parfaite (Idéale)
-plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color='#e74c3c', linestyle='--', linewidth=2, label='Prédiction parfaite')
-# Nuage de points (Réalité)
-plt.scatter(y_test_sample, y_pred_sample, color='#3498db', alpha=0.3, s=10, label='Prédictions du modèle')
+plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color='#e74c3c', linestyle='--', linewidth=2, label='Perfect Prediction')
+plt.scatter(y_test_sample, y_pred_sample, color='#3498db', alpha=0.3, s=10, label='Model Predictions')
 
-plt.title("Validation Out-of-Sample : Prix prédit vs Vérité terrain", fontsize=16, fontweight='bold', pad=15)
-plt.xlabel("Prix réel (synthétique Heston/SABR) [$]", fontsize=14)
-plt.ylabel("Prix prédit par le modèle IA [$]", fontsize=14)
+plt.title("Out-of-Sample Validation: Predicted Price vs Ground Truth", fontsize=16, fontweight='bold', pad=15)
+plt.xlabel("Real Price (Synthetic Black-Scholes) [$]", fontsize=14)
+plt.ylabel("AI Model Predicted Price [$]", fontsize=14)
 plt.legend(fontsize=12)
 plt.tight_layout()
-plt.savefig("scatter_plot.png", dpi=300)
+plt.savefig("assets/scatter_plot.png", dpi=300)
 plt.close()
 
-print("Les fichiers 'loss_curve.png' et 'scatter_plot.png' ont été créés.")
+print("Files 'loss_curve.png' and 'scatter_plot.png' generated successfully in assets folder.")
