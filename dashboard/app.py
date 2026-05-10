@@ -48,7 +48,7 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                 valid_calls.append((row['strike'], market_price))
             
             if batch_data:
-                np.savetxt("batch_inputs.csv", batch_data, delimiter=",")
+                np.array(batch_data, dtype=np.float32).tofile("batch_inputs.bin")
                 
                 try:
                     # End-to-End Timer (Python includes I/O and OS overhead)
@@ -60,10 +60,9 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                     end_e2e = time.perf_counter()
                     e2e_latency_us = (end_e2e - start_e2e) * 1_000_000
                     
-                    # Ensure C++ outputs the latency properly to be parsed here
                     latency_batch_ns = int(output.split(":")[1].replace("ns", "").strip()) if "ns" in output else 0
                     
-                    ai_prices = np.loadtxt("batch_outputs.csv")
+                    ai_prices = np.fromfile("batch_outputs.bin", dtype=np.float32)
                     if ai_prices.ndim == 0:
                         ai_prices = [float(ai_prices)]
                     
@@ -110,5 +109,5 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                 except Exception as e:
                     st.error(f"C++ Execution Error: {e}")
 
-            if os.path.exists("batch_inputs.csv"): os.remove("batch_inputs.csv")
-            if os.path.exists("batch_outputs.csv"): os.remove("batch_outputs.csv")
+            if os.path.exists("batch_inputs.bin"): os.remove("batch_inputs.bin")
+            if os.path.exists("batch_outputs.bin"): os.remove("batch_outputs.bin")

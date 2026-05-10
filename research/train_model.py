@@ -80,14 +80,15 @@ for epoch in range(epochs):
     if (epoch + 1) % 5 == 0:
         print(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
 
-# 5. Exporting model weights and scaler for C++ inference engine
+# 5. Exporting model weights and scaler for C++ inference engine (Binary format)
 os.makedirs("model_weights", exist_ok=True)
 for name, param in model.named_parameters():
-    np.savetxt(f"model_weights/{name}.csv", param.detach().numpy(), delimiter=",")
+    # Explicit conversion to float32 (32 bits) and raw binary writing
+    param.detach().numpy().astype(np.float32).tofile(f"model_weights/{name}.bin")
 
-np.savetxt("model_weights/scaler_mean.csv", scaler_X.mean_, delimiter=",")
-np.savetxt("model_weights/scaler_scale.csv", scaler_X.scale_, delimiter=",")
-print("Weights and Scaler successfully exported.")
+scaler_X.mean_.astype(np.float32).tofile("model_weights/scaler_mean.bin")
+scaler_X.scale_.astype(np.float32).tofile("model_weights/scaler_scale.bin")
+print("Weights and Scaler successfully exported in BINARY format.")
 
 # 6. Model Evaluation on test data (Out-of-Sample)
 model.eval()
