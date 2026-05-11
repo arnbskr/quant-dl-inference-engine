@@ -6,6 +6,8 @@ import numpy as np
 import time
 from datetime import datetime
 import os
+import socket
+import struct
 
 st.set_page_config(page_title="Quant Anomaly Scanner", layout="wide")
 st.title("Pricing Anomaly Scanner (Batch Mode)")
@@ -48,23 +50,38 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                 valid_calls.append((row['strike'], market_price))
             
             if batch_data:
-                np.array(batch_data, dtype=np.float32).tofile("batch_inputs.bin")
-                
                 try:
-                    # End-to-End Timer (Python includes I/O and OS overhead)
                     start_e2e = time.perf_counter()
                     
-                    process = subprocess.run(["./engine/inference_engine"], capture_output=True, text=True, check=True)
-                    output = process.stdout.strip()
+                    # Connect to the C++ Daemon via local TCP Sockets
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.connect(('127.0.0.1', 5555))
+                    
+                    # 1. Send the number of options (32-bit Integer)
+                    num_options = len(batch_data)
+                    s.sendall(struct.pack('i', num_options))
+                    
+                    # 2. Send the binary stream directly to RAM
+                    batch_bytes = np.array(batch_data, dtype=np.float32).tobytes()
+                    s.sendall(batch_bytes)
+                    
+                    # 3. Receive the C++ latency (64-bit Integer)
+                    latency_data = s.recv(8)
+                    latency_batch_ns = struct.unpack('q', latency_data)[0]
+                    
+                    # 4. Receive the array of predicted prices (32-bit Float)
+                    prices_data = b""
+                    expected_bytes = num_options * 4
+                    while len(prices_data) < expected_bytes:
+                        packet = s.recv(expected_bytes - len(prices_data))
+                        if not packet: break
+                        prices_data += packet
+                        
+                    ai_prices = np.frombuffer(prices_data, dtype=np.float32)
+                    s.close()
                     
                     end_e2e = time.perf_counter()
                     e2e_latency_us = (end_e2e - start_e2e) * 1_000_000
-                    
-                    latency_batch_ns = int(output.split(":")[1].replace("ns", "").strip()) if "ns" in output else 0
-                    
-                    ai_prices = np.fromfile("batch_outputs.bin", dtype=np.float32)
-                    if ai_prices.ndim == 0:
-                        ai_prices = [float(ai_prices)]
                     
                     results = []
                     for i, (strike, market_price) in enumerate(valid_calls):
@@ -106,8 +123,10 @@ if st.sidebar.button("Launch Live Scanner", type="primary"):
                     
                     st.dataframe(styled_df, width="stretch", hide_index=True)
                     
+                except ConnectionRefusedError:
+                    st.error("C++ Daemon is not running. Please start the engine/inference_engine background process.")
                 except Exception as e:
-                    st.error(f"C++ Execution Error: {e}")
+                    st.error(f"Execution Error: {e}")
 
             if os.path.exists("batch_inputs.bin"): os.remove("batch_inputs.bin")
             if os.path.exists("batch_outputs.bin"): os.remove("batch_outputs.bin")
