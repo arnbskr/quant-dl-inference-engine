@@ -27,10 +27,11 @@ quant-dl-inference-engine/
 │   └── app.py
 ├── engine/                    # Native low-latency inference engine
 │   └── inference_engine.cpp
-├── research/                  # Data generation, PyTorch training, and analytics
+├── research/                  # Data generation, training, and analytics
 │   ├── train_model.py
 │   ├── plot_engineering.py
-│   └── plot_results.py
+│   ├── plot_results.py
+│   └── benchmark_ipc.py       # HFT latency stress-test script (P50/P99)
 ├── model_weights/             # Exported binary tensors (.bin)
 ├── run.sh                     # Automation script (Compilation, Daemon & UI)
 └── requirements.txt           # Python dependencies
@@ -38,7 +39,7 @@ quant-dl-inference-engine/
 
 ## Performance & Low-Latency Engineering
 
-The engine achieves an ultra-low pure inference latency of **< 500 nanoseconds** per option on a standard CPU, and an End-to-End system latency (Python UI to C++ and back) of **~25 microseconds**.
+The engine achieves an ultra-low pure inference latency of **< 500 nanoseconds** (P50: 444 ns) per option on a standard CPU, and an End-to-End system latency (Python UI to C++ and back) of **< 2 microseconds** (P50: 1.66 µs).
 
 This high-frequency trading (HFT) standard was achieved by implementing strict quantitative engineering practices:
 
@@ -47,6 +48,13 @@ This high-frequency trading (HFT) standard was achieved by implementing strict q
 * [x] **Vectorization (SIMD):** Integration of the `Eigen` library and `-march=native` compiler flags to execute SIMD intrinsic instructions (AVX/AVX2) for single-clock-cycle parallel computing.
 * [x] **Zero-Overhead IPC (Inter-Process Communication):** Replaced slow disk I/O and CSV parsing with a persistent C++ TCP Daemon exchanging raw binary data (`np.float32` <-> `float`) with Python via local sockets.
 * [x] **Micro-Benchmarking:** Implementation of CPU warm-up cycles to mitigate OS jitter and cold-cache penalties during performance measurement.
+
+### Benchmark Environment
+Inference latency was measured on CPU to avoid PCIe transfer overhead associated with GPU execution. The model was designed to maximize cache locality, with weights and activations small enough to fit largely within L1/L2 cache during inference.
+* **CPU:** Intel(R) Core(TM) i7-12700H (14 Cores, 20 Threads, max 4.7 GHz)
+* **OS:** Linux (Fedora)
+* **Vectorization:** AVX2 Instruction Set (`-march=native`)
+* *See `research/benchmark_ipc.py` to reproduce the exact P50/P99 measurements locally.*
 
 ## Prerequisites
 
