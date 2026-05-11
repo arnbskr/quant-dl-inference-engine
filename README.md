@@ -16,7 +16,7 @@ Derivatives pricing often faces a dilemma: using fast but imperfect analytical f
 This project tackles this bottleneck through a hybrid architecture:
 1. **Research & Modeling (Python / PyTorch):** Training a Multi-Layer Perceptron (MLP) on synthetic data to approximate complex, non-linear pricing functions (e.g., Volatility Smiles).
 2. **Inference Engine (Native C++):** Exporting model weights to a custom, lightweight C++ inference engine that executes the forward pass entirely independently of heavy ML frameworks.
-3. **Live Application (Streamlit):** A real-time dashboard fetching live market data (via Yahoo Finance), running the C++ engine for theoretical pricing, and scanning for arbitrage opportunities (model vs. market spreads) in microseconds.
+3. **Live Application (Streamlit):** A real-time dashboard fetching live market data (via Yahoo Finance), communicating with the C++ Daemon via TCP Sockets, and scanning for arbitrage opportunities (model vs. market spreads) in microseconds.
 
 ## Repository Structure
 
@@ -31,27 +31,31 @@ quant-dl-inference-engine/
 │   ├── train_model.py
 │   ├── plot_engineering.py
 │   └── plot_results.py
-├── model_weights/             # Exported tensors and parameters (auto-generated)
-├── run.sh                     # Automation script (Compilation & Execution)
+├── model_weights/             # Exported binary tensors (.bin)
+├── run.sh                     # Automation script (Compilation, Daemon & UI)
 └── requirements.txt           # Python dependencies
 ```
 
 ## Performance & Low-Latency Engineering
 
-**Current Performance:** The engine achieves an ultra-low pure inference latency of **~450 nanoseconds** per option on a standard CPU.
+The engine achieves an ultra-low pure inference latency of **< 500 nanoseconds** per option on a standard CPU, and an End-to-End system latency (Python UI to C++ and back) of **~25 microseconds**.
 
 This high-frequency trading (HFT) standard was achieved by implementing strict quantitative engineering practices:
-- [x] **Memory Management:** Zero dynamic allocation (no `malloc`/`new`) during the critical execution path via pre-allocated buffers and `Eigen::Map`.
-- [x] **Cache Line Optimization:** Complete elimination of `std::vector<vector<float>>` pointer chasing by flattening 2D weight matrices into contiguous 1D arrays, maximizing L1/L2 CPU cache hits.
-- [x] **Vectorization (SIMD):** Integration of the `Eigen` library and `-march=native` compiler flags to execute SIMD intrinsic instructions (AVX/AVX2) for single-clock-cycle parallel computing.
-- [x] **Micro-Benchmarking:** Implementation of CPU warm-up cycles to mitigate OS jitter and cold-cache penalties during performance measurement.
-- [ ] *Next step: Replace CSV parsing with a binary serialization format to reduce engine initialization time.*
+
+* [x] **Memory Management:** Zero dynamic allocation (no `malloc`/`new`) during the critical execution path via pre-allocated buffers and `Eigen::Map`.
+* [x] **Cache Line Optimization:** Complete elimination of `std::vector<vector<float>>` pointer chasing by flattening 2D weight matrices into contiguous 1D arrays, maximizing L1/L2 CPU cache hits.
+* [x] **Vectorization (SIMD):** Integration of the `Eigen` library and `-march=native` compiler flags to execute SIMD intrinsic instructions (AVX/AVX2) for single-clock-cycle parallel computing.
+* [x] **Zero-Overhead IPC (Inter-Process Communication):** Replaced slow disk I/O and CSV parsing with a persistent C++ TCP Daemon exchanging raw binary data (`np.float32` <-> `float`) with Python via local sockets.
+* [x] **Micro-Benchmarking:** Implementation of CPU warm-up cycles to mitigate OS jitter and cold-cache penalties during performance measurement.
 
 ## Prerequisites
 
 * **Python 3.8+**
-* **C++ Compiler** supporting C++17 (e.g., `g++` or `clang++`).
-* OS: Linux, macOS, or Windows (via WSL/MinGW).
+* **C++ Compiler** supporting C++17 (e.g., `g++` or `clang++`)
+* **Eigen3 Library** (C++ template library for linear algebra)
+* *Linux (Fedora/RHEL):* `sudo dnf install eigen3-devel`
+* *Linux (Ubuntu/Debian):* `sudo apt install libeigen-dev`
+* *macOS:* `brew install eigen`
 
 ## Installation & Quick Start
 
@@ -60,38 +64,52 @@ This high-frequency trading (HFT) standard was achieved by implementing strict q
 It is highly recommended to use a Python virtual environment.
 
 ```bash
-git clone [https://github.com/arnbskr/quant-dl-inference-engine.git](https://github.com/arnbskr/quant-dl-inference-engine.git)
+git clone https://github.com/arnbskr/quant-dl-inference-engine.git
 cd quant-dl-inference-engine
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Train Model & Export Weights
+### Step 2: Run the Pipeline (Automated Way)
 
-Generate the synthetic options data, train the PyTorch MLP, and export the weights into the `model_weights/` directory.
+The easiest way to start the project is to use the provided bash script. It will automatically train the model (if weights are missing), compile the C++ engine, launch the TCP Daemon in the background, and open the Streamlit scanner.
+
+```bash
+./run.sh
+```
+
+---
+
+### Alternative: Manual Execution (For Developers)
+
+If you prefer to run each component manually to test the latency at each step:
+
+**1. Train Model & Export Binary Weights:**
 
 ```bash
 python research/train_model.py
 ```
 
-### Step 3: Compile the C++ Inference Engine
-
-Compile the native engine with the maximum optimization flag (`-O3`).
+**2. Compile the C++ Inference Engine:**
 
 ```bash
-g++ -O3 engine/inference_engine.cpp -o engine/inference_engine
+g++ -O3 -march=native -I/usr/include/eigen3 engine/inference_engine.cpp -o engine/inference_engine
 ```
 
-### Step 4: Run the Live Arbitrage Scanner
-
-Launch the Streamlit dashboard to see the MLOps pipeline scan live market anomalies.
+**3. Test the C++ Engine in Single-Shot Mode (CLI):**
+*(Requires 6 standardized market parameters)*
 
 ```bash
+./engine/inference_engine -0.43 0.27 -0.75 -1.18 1.34 0.88
+```
+
+**4. Launch the C++ Daemon & Streamlit GUI:**
+
+```bash
+./engine/inference_engine & 
 streamlit run dashboard/app.py
 ```
-
-*(Alternatively, you can run the entire pipeline at once using the provided bash script: `./run.sh`)*
 
 ## References
 
